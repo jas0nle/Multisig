@@ -2,7 +2,13 @@
 
 pragma solidity ^0.8.7;
 
+// import "hardhat/console.sol";
+
+error Multisig__NotAnOwner();
+error Multisig__InvalidTransaction();
+
 contract Multisig {
+    event Received(address sender, uint256 value, uint256 balance);
     event TranactionCreated(address sender, uint256 transactionCount, address to, uint256 value);
     event TransactionConfirmed(address sender, uint256 transactionNum, uint256 numConfirmations);
     event ConfirmationRevoked(address sender, uint256 transactionNum, uint256 numConfirmations);
@@ -44,23 +50,30 @@ contract Multisig {
             address owner = _owners[i];
             require(owner != address(0) && !isOwner[owner], "Invalid owner");
             owners.push(owner);
+            isOwner[owner] = true;
         }
         numConfirmations = _numConfirmations;
     }
 
     // only the Owners can call
     modifier onlyOwner() {
-        require(isOwner[msg.sender], "Not an owner!");
+        if (!isOwner[msg.sender]) {
+            revert Multisig__NotAnOwner();
+        }
         _;
     }
 
     // transaction is valid
     modifier validTxn(uint256 _transactionNum) {
-        require(_transactionNum < transactions.length, "Invalid transaction");
+        if (_transactionNum >= transactions.length) {
+            revert Multisig__InvalidTransaction();
+        }
         _;
     }
 
-    receive() external payable {}
+    receive() external payable {
+        emit Received(msg.sender, msg.value, address(this).balance);
+    }
 
     // establishes a brand new transaction without any confirmers
     function createTransaction(
@@ -88,7 +101,11 @@ contract Multisig {
         );
     }
 
-    function revokeCofirmation(uint256 _transactionNum) public onlyOwner validTxn(_transactionNum) {
+    function revokeConfirmation(uint256 _transactionNum)
+        public
+        onlyOwner
+        validTxn(_transactionNum)
+    {
         Transaction memory txn = transactions[_transactionNum];
         require(!txn.executed, "Transaction already executed");
         require(isConfirmed[_transactionNum][msg.sender], "Not confirmed!");
@@ -126,7 +143,7 @@ contract Multisig {
         return transactions.length;
     }
 
-    function getTransactionConfirmations(uint256 _transactionNum)
+    function getTransactionInfo(uint256 _transactionNum)
         public
         view
         returns (
